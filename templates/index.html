@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ thống FaceID & Anti-Spoofing</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        h1 { color: #333; margin-bottom: 10px; }
+        
+        .container {
+            position: relative;
+            width: 640px;
+            max-width: 100%;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        video {
+            width: 100%;
+            display: block;
+            transform: scaleX(-1); /* Lật gương webcam */
+        }
+        
+        /* Lớp phủ kết quả */
+        .overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-size: 20px;
+            font-weight: bold;
+            display: none; /* Mặc định ẩn */
+        }
+
+        /* Màu sắc trạng thái */
+        .status-approved { color: #2ecc71; border-top: 4px solid #2ecc71; }
+        .status-denied { color: #e74c3c; border-top: 4px solid #e74c3c; }
+        .status-warning { color: #f39c12; border-top: 4px solid #f39c12; }
+
+        /* Khu vực nút điều khiển */
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            transition: background 0.3s;
+            font-weight: bold;
+        }
+
+        #btnScan {
+            background-color: #3498db;
+            color: white;
+        }
+        #btnScan:hover { background-color: #2980b9; }
+        #btnScan:disabled { background-color: #95a5a6; cursor: not-allowed; }
+
+        #logArea {
+            margin-top: 20px;
+            width: 640px;
+            height: 150px;
+            overflow-y: auto;
+            background: white;
+            padding: 10px;
+            border: 1px solid #ddd;
+            font-family: monospace;
+            font-size: 12px;
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Hệ thống Face Anti-Spoofing</h1>
+
+    <div class="container" id="cameraBox">
+        <video id="video" autoplay playsinline></video>
+        <div id="result" class="overlay"></div>
+    </div>
+
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <div class="controls">
+        <button id="btnScan" onclick="startScanning()">📸 Bắt đầu quét</button>
+    </div>
+
+    <div id="logArea">LOG HỆ THỐNG:</div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const resultDiv = document.getElementById('result');
+        const logArea = document.getElementById('logArea');
+        const btnScan = document.getElementById('btnScan');
+
+        let isScanning = false; // Biến trạng thái để kiểm soát vòng lặp
+
+        // 1. Mở Webcam
+        navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
+            .then(stream => {
+                video.srcObject = stream;
+                log("Camera đã sẵn sàng.");
+            })
+            .catch(err => {
+                console.error("Lỗi Camera:", err);
+                log("Lỗi: Không thể mở Camera.");
+            });
+
+        function log(msg) {
+            const time = new Date().toLocaleTimeString();
+            logArea.innerHTML = `[${time}] ${msg}<br>` + logArea.innerHTML;
+        }
+
+        // 2. Hàm bắt đầu quá trình quét
+        function startScanning() {
+            if (isScanning) return; // Tránh bấm nhiều lần
+            
+            isScanning = true;
+            btnScan.disabled = true;
+            btnScan.innerText = "Đang xử lý...";
+            resultDiv.style.display = 'none'; // Ẩn kết quả cũ
+            
+            processFrame(); // Bắt đầu vòng lặp gửi ảnh
+        }
+
+        // 3. Hàm xử lý gửi ảnh
+        async function processFrame() {
+            if (!isScanning) return;
+
+            // Chụp frame
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            canvas.toBlob(async (blob) => {
+                const formData = new FormData();
+                formData.append('file', blob, 'capture.jpg');
+
+                try {
+                    const response = await fetch('/verify', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await response.json();
+
+                    handleResponse(data);
+
+                } catch (error) {
+                    console.error(error);
+                    log("Lỗi kết nối Server");
+                    stopScanning(); // Dừng nếu lỗi mạng
+                }
+            }, 'image/jpeg', 0.8);
+        }
+
+        // 4. Xử lý kết quả trả về
+        function handleResponse(data) {
+            // Trường hợp 1: Không thấy mặt -> Thử lại ngay lập tức
+            if (data.status === 'error' && data.message.includes("Không tìm thấy khuôn mặt")) {
+                console.log("Chưa thấy mặt, thử lại...");
+                if (isScanning) {
+                    // Gọi đệ quy nhẹ để thử lại sau 100ms (tránh spam server quá nhanh)
+                    setTimeout(processFrame, 100); 
+                }
+                return;
+            }
+
+            // Trường hợp 2: Có kết quả (Thành công, Thất bại, hoặc Cảnh báo)
+            // -> HIỂN THỊ VÀ DỪNG QUÉT
+            showResult(data);
+            stopScanning();
+        }
+
+        // 5. Hiển thị UI kết quả
+        function showResult(data) {
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'overlay'; // Reset class
+
+            let logMsg = "";
+
+            if (data.status === 'approved') {
+                resultDiv.classList.add('status-approved');
+                resultDiv.innerHTML = `✅ ${data.message}<br>`;
+                logMsg = `APPROVED: ${data.message}`;
+            } 
+            else if (data.status === 'denied') {
+                resultDiv.classList.add('status-denied');
+                resultDiv.innerHTML = `🚫 ${data.message}<br>`;
+                logMsg = `DENIED: Phát hiện giả mạo (Score: ${data.liveness_score.toFixed(4)})`;
+            } 
+            else {
+                // Warning hoặc Unknown
+                resultDiv.classList.add('status-warning');
+                resultDiv.innerHTML = `⚠️ ${data.message}`;
+                logMsg = `WARNING: ${data.message}`;
+            }
+
+            log(logMsg);
+        }
+
+        // 6. Hàm dừng quét và reset nút
+        function stopScanning() {
+            isScanning = false;
+            btnScan.disabled = false;
+            btnScan.innerText = "📸 Quét lại";
+        }
+
+    </script>
+</body>
+</html>
