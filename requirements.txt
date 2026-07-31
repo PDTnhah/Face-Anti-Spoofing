@@ -6,3 +6,6 @@ opencv-python
 numpy
 pillow
 jinja2
+python-dotenv
+insightface
+onnxruntime

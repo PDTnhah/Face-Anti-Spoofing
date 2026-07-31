@@ -1,0 +1,51 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# === Environment & Secrets ===
+.env
+*.env.local
+
+# === Database (chứa dữ liệu cá nhân, không commit) ===
+face_db.sqlite
+*.sqlite
+*.db
+
+# === Model Files (quá lớn cho Git) ===
+*.keras
+*.h5
+*.onnx
+*.pt
+*.pth
+
+# === InsightFace model cache ===
+.insightface/
+buffalo_l/
+
+# === Frontend ===
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# === IDE ===
+.idea/
+.vscode/
+*.iml
+
+# === OS ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === Logs ===
+*.log
+logs/
